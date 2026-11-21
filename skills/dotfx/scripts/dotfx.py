@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """dotfx: turn any image into LED dots, halftone, dither or pixel art.
-Usage: python dotfx.py IMAGE [--preset NAME|all] [-o OUTDIR] [overrides]"""
+Usage: python dotfx.py IMAGE_OR_VIDEO [--preset NAME|all] [-o OUTDIR] [overrides]"""
 import argparse, os
 import numpy as np
 from PIL import Image, ImageFilter, ImageEnhance
@@ -81,10 +81,76 @@ def apply(img, **o):
         out = Image.fromarray(np.clip(np.asarray(out, np.float32) + gl * p["glow"], 0, 255).astype(np.uint8))
     return out
 
+VIDEO_EXT = (".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi", ".gif")
+
+
+def _probe(path):
+    import json, subprocess
+    r = subprocess.run(["ffprobe", "-v", "error", "-show_streams", "-of", "json", path],
+                       capture_output=True, text=True, check=True)
+    st = json.loads(r.stdout)["streams"]
+    v = next(x for x in st if x["codec_type"] == "video")
+    num, den = (v.get("avg_frame_rate") or v.get("r_frame_rate") or "30/1").split("/")
+    fps = float(num) / float(den or 1) if float(num) else 30.0
+    return int(v["width"]), int(v["height"]), fps, any(x["codec_type"] == "audio" for x in st)
+
+
+def _frame_job(job):
+    raw, size, cfg = job
+    return apply(Image.frombytes("RGB", size, raw), **cfg)
+
+
+def process_video(path, cfg, out_path, max_width=1080, workers=None):
+    """Apply one effect to every frame of a video with ffmpeg pipes; keeps the audio track."""
+    import subprocess
+    from multiprocessing import Pool
+    w, h, fps, has_audio = _probe(path)
+    tw = min(w, max_width)
+    tw -= tw % 2
+    th = round(h * tw / w)
+    th -= th % 2
+    cfg = {**cfg, "width": tw}
+    dec = subprocess.Popen(["ffmpeg", "-v", "error", "-i", path, "-vf", f"scale={tw}:{th}:flags=lanczos",
+                            "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], stdout=subprocess.PIPE)
+    fsz = tw * th * 3
+    enc = None
+    ow = oh = None
+    n = 0
+
+    def frames():
+        while True:
+            raw = dec.stdout.read(fsz)
+            if len(raw) < fsz:
+                return
+            yield (raw, (tw, th), cfg)
+
+    with Pool(workers) as pool:
+        for img in pool.imap(_frame_job, frames(), chunksize=4):
+            if enc is None:
+                ow, oh = img.width - img.width % 2, img.height - img.height % 2
+                cmd = ["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24",
+                       "-s", f"{ow}x{oh}", "-r", f"{fps:.3f}", "-i", "-"]
+                if has_audio:
+                    cmd += ["-i", path, "-map", "0:v", "-map", "1:a", "-c:a", "aac", "-b:a", "160k", "-shortest"]
+                cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
+                        "-movflags", "+faststart", out_path + ".part.mp4"]
+                enc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+            if img.size != (ow, oh):
+                img = img.crop((0, 0, ow, oh))
+            enc.stdin.write(img.tobytes())
+            n += 1
+    dec.wait()
+    enc.stdin.close()
+    if enc.wait() != 0:
+        raise SystemExit("ffmpeg failed while encoding")
+    os.replace(out_path + ".part.mp4", out_path)
+    return n
+
+
 def main():
     a = argparse.ArgumentParser(description=__doc__)
-    a.add_argument("image")
-    a.add_argument("--preset", default="all", help="all, " + ", ".join(PRESETS))
+    a.add_argument("image", help="an image, or a video (mp4, mov, webm, gif…)")
+    a.add_argument("--preset", default=None, help="all, " + ", ".join(PRESETS) + " (images default to all, videos to led)")
     a.add_argument("-o", "--out", default="dotfx_out")
     for k in ("cell", "levels", "bayer", "width"):
         a.add_argument("--" + k, type=int)
@@ -94,16 +160,26 @@ def main():
     a.add_argument("--bg", help="black, white, soft or #hex")
     a.add_argument("--duo", nargs=2, metavar=("DARK", "LIGHT"), help="two hex colors")
     args = vars(a.parse_args())
-    src, name = Image.open(args.pop("image")), None
-    os.makedirs(args["out"], exist_ok=True)
-    names = list(PRESETS) if args["preset"] == "all" else [args["preset"]]
-    out, base = args.pop("out"), os.path.splitext(os.path.basename(src.filename))[0]
-    args.pop("preset")
+    path, out, preset = args.pop("image"), args.pop("out"), args.pop("preset")
+    os.makedirs(out, exist_ok=True)
+    base = os.path.splitext(os.path.basename(path))[0]
+    overrides = {k: v for k, v in args.items() if v is not None}
+    if path.lower().endswith(VIDEO_EXT):
+        names = list(PRESETS) if preset == "all" else [preset or "led"]
+        for n in names:
+            cfg = {**PRESETS[n], **overrides}
+            dest = os.path.join(out, f"{base}_{n}.mp4")
+            count = process_video(path, cfg, dest, max_width=overrides.get("width") or 1080)
+            print(f"{dest} ({count} frames)")
+        return
+    src = Image.open(path)
+    names = list(PRESETS) if (preset or "all") == "all" else [preset]
     for n in names:
-        res = apply(src, **{**PRESETS[n], **{k: v for k, v in args.items() if v is not None}})
-        path = os.path.join(out, f"{base}_{n}.jpg")
-        res.save(path, quality=92)
-        print(path)
+        res = apply(src, **{**PRESETS[n], **overrides})
+        dest = os.path.join(out, f"{base}_{n}.jpg")
+        res.save(dest, quality=92)
+        print(dest)
+
 
 if __name__ == "__main__":
     main()

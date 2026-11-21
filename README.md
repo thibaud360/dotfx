@@ -1,12 +1,18 @@
 # dotfx
 
-A Claude skill that turns any picture into LED dots, halftone, dither, duotone or pixel art.
+A Claude skill that turns any picture or video into LED dots, halftone, dither, duotone or pixel art.
 
 ![Mountains](examples/mountains_strip.jpg)
 ![Clouds](examples/clouds_strip.jpg)
 ![Light](examples/light_strip.jpg)
 
 Original, then `led`, `soft-led`, `dither`, `fine-dither`, `duotone`, `pixel`.
+
+## Now with video
+
+https://github.com/thibaud360/dotfx/raw/main/examples/dotfx_video_demo.mp4
+
+Send Claude a clip and ask for an LED screen look: every frame gets the effect, the sound is kept. ([download the demo](examples/dotfx_video_demo.mp4))
 
 ## Use it with Claude
 
@@ -15,7 +21,7 @@ Original, then `led`, `soft-led`, `dither`, `fine-dither`, `duotone`, `pixel`.
 **Claude Code:**
 
 ```bash
-git clone https://github.com/ThibaudFrancony/dotfx
+git clone https://github.com/thibaud360/dotfx
 cp -r dotfx/skills/dotfx ~/.claude/skills/
 ```
 
@@ -26,6 +32,7 @@ pip install pillow numpy
 python skills/dotfx/scripts/dotfx.py photo.jpg                     # all presets
 python skills/dotfx/scripts/dotfx.py photo.jpg --preset led --cell 20
 python skills/dotfx/scripts/dotfx.py photo.jpg --preset duotone --duo "#C2185B" "#FFF3E0"
+python skills/dotfx/scripts/dotfx.py clip.mp4 --preset led                 # videos (needs ffmpeg)
 ```
 
 Every setting can be overridden: `--cell`, `--shape circle|square|line`, `--dot`, `--bg black|white|soft|#hex`, `--blur`, `--levels`, `--bayer 2|4|8`, `--bright`, `--contrast`, `--sat`, `--glow`, `--duo DARK LIGHT`, `--width`.

@@ -1,6 +1,6 @@
 ---
 name: dotfx
-description: Turn a photo into LED dot-matrix, halftone, dither, duotone or pixel art. Use when the user asks for an LED, dot, halftone, dithered, pixel or "screen" look on an image, or types /dotfx.
+description: Turn a photo or a video into LED dot-matrix, halftone, dither, duotone or pixel art. Use when the user asks for an LED, dot, halftone, dithered, pixel or "screen" look on an image, or types /dotfx.
 ---
 
 # dotfx
@@ -45,6 +45,13 @@ Any preset value can be overridden:
 
 Example: `python scripts/dotfx.py photo.jpg --preset duotone --duo "#C2185B" "#FFF3E0" --cell 4`
 
+## Videos
+
+The same script takes a video (mp4, mov, webm, gif): `python scripts/dotfx.py clip.mp4 --preset led -o dotfx_out`. It applies the effect to every frame, keeps the sound and writes `clip_led.mp4` (H.264, max 1080 px wide; `--width` to change). Videos default to one preset (`led`); `--preset all` renders all six and takes longer. Needs `ffmpeg`.
+- Look at one frame first: render a still from the video with the image mode, tune the settings, then run the whole clip with the same flags.
+- Dark night footage usually needs `--bright 1.2` to `1.4` with `led`.
+- Ordered dithering is stable from frame to frame, so `dither` and `fine-dither` don't flicker.
+
 ## If the script is missing
 
-Get it from the public repo: `git clone --depth 1 https://github.com/ThibaudFrancony/dotfx /tmp/dotfx` and use `/tmp/dotfx/skills/dotfx/scripts/dotfx.py`.
+Get it from the public repo: `git clone --depth 1 https://github.com/thibaud360/dotfx /tmp/dotfx` and use `/tmp/dotfx/skills/dotfx/scripts/dotfx.py`.
